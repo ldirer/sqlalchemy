@@ -454,15 +454,20 @@ class LoaderCriteriaTest(_Fixtures, testing.AssertsCompiledSQL):
     ):
         User, Address = user_address_fixture
 
-        stmt = select(User).options(
-            selectinload(User.addresses),
-            with_loader_criteria(Address, Address.email_address != "name"),
-        )
+        def get_statement(closure="name"):
+
+            stmt = select(User).options(
+                selectinload(User.addresses),
+                with_loader_criteria(
+                    Address, lambda cls: cls.email_address != closure
+                ),
+            )
+            return stmt
 
         s = Session(testing.db, future=True)
 
+        stmt = get_statement(closure="name")
         with self.sql_execution_asserter() as asserter:
-
             s.execute(stmt).all()
 
         asserter.assert_(
@@ -475,9 +480,29 @@ class LoaderCriteriaTest(_Fixtures, testing.AssertsCompiledSQL):
                 "AS addresses_id, addresses.email_address "
                 "AS addresses_email_address FROM addresses "
                 "WHERE addresses.user_id IN (__[POSTCOMPILE_primary_keys]) "
-                "AND addresses.email_address != :email_address_1 "
+                "AND addresses.email_address != :closure_1 "
                 "ORDER BY addresses.id",
-                [{"primary_keys": [7, 8, 9, 10], "email_address_1": "name"}],
+                [{"primary_keys": [7, 8, 9, 10], "closure_1": "name"}],
+            ),
+        )
+
+        stmt = get_statement(closure="new name")
+        with self.sql_execution_asserter() as asserter:
+            s.execute(stmt).all()
+
+        asserter.assert_(
+            CompiledSQL(
+                "SELECT users.id, users.name FROM users",
+                [],
+            ),
+            CompiledSQL(
+                "SELECT addresses.user_id AS addresses_user_id, addresses.id "
+                "AS addresses_id, addresses.email_address "
+                "AS addresses_email_address FROM addresses "
+                "WHERE addresses.user_id IN (__[POSTCOMPILE_primary_keys]) "
+                "AND addresses.email_address != :closure_1 "
+                "ORDER BY addresses.id",
+                [{"primary_keys": [7, 8, 9, 10], "closure_1": "new name"}],
             ),
         )
 
